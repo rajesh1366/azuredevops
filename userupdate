@@ -1,0 +1,59 @@
+import base64
+import requests
+import subprocess
+
+# === CONFIGURE THESE ===
+cloud_org_url = "https://dev.azure.com/YOUR_ORG"
+user_email = "svc.d.tr@test.net"
+onprem_domain_user = "TESTDOMAIN\\svc.d.tr"
+collection_url = "http://tfs:8080/tfs/DefaultCollection"
+project_name = "YourProject"
+tfsecurity_path = r"C:\Program Files\Azure DevOps Server 2022\Tools\TFSSecurity.exe"
+pat_token = "your_azure_devops_pat_here"
+
+# === AUTH ===
+auth = base64.b64encode(f":{pat_token}".encode()).decode()
+headers = {
+    "Authorization": f"Basic {auth}"
+}
+
+# === Step 1: Get User Descriptor ===
+user_api = f"{cloud_org_url}/_apis/graph/users?filterValue={user_email}&api-version=7.1-preview.1"
+user_res = requests.get(user_api, headers=headers).json()
+user_descriptor = user_res['value'][0]['descriptor']
+print(f"[INFO] User descriptor for {user_email}: {user_descriptor}")
+
+# === Step 2: Get Group Memberships (Upwards) ===
+groups_api = f"{cloud_org_url}/_apis/graph/memberships/{user_descriptor}?direction=up&api-version=7.1-preview.1"
+groups_res = requests.get(groups_api, headers=headers).json()
+
+# === Step 3: Resolve Group Names ===
+group_descriptors = [grp['containerDescriptor'] for grp in groups_res['value']]
+group_names = []
+
+for desc in group_descriptors:
+    group_info_api = f"{cloud_org_url}/_apis/graph/descriptors/{desc}?api-version=7.1-preview.1"
+    group_res = requests.get(group_info_api, headers=headers).json()
+    group_display_name = group_res['value']['displayName']
+    group_names.append(group_display_name)
+
+print(f"[INFO] Groups found in cloud for user: {group_names}")
+
+# === Step 4: Add user to same groups in On-Prem using TFSSecurity ===
+for group in group_names:
+    full_group_name = f"[{project_name}]\\{group}"
+    print(f"[ACTION] Adding {onprem_domain_user} to {full_group_name}")
+
+    cmd = [
+        tfsecurity_path,
+        "/add",
+        f"/account:{onprem_domain_user}",
+        f"/group:{full_group_name}",
+        f"/collection:{collection_url}"
+    ]
+
+    try:
+        subprocess.run(cmd, check=True)
+        print(f"[SUCCESS] Added to {full_group_name}")
+    except subprocess.CalledProcessError as e:
+        print(f"[ERROR] Failed to add to {full_group_name}: {e}")
