@@ -3,10 +3,10 @@ from requests.auth import HTTPBasicAuth
 
 # === Configuration ===
 
-source_org = "CloudSteer"
-dest_org = "rajeshtest01"
-user_email = "dinesh.angadi@isteer.com"
-pat = "90hKckYoHzqaqjrXkMoKzV7yJ5Kz4fbsAyOai5Innlw2y1rg3mSVJQQJ99BGACAAAAAGyXmFAAAGAZDOAbNJ"  # PAT must have access to both orgs
+source_org = ""
+dest_org = ""
+user_email = ""
+pat = ""  # PAT must have access to both orgs
 
 
 # === Setup ===
