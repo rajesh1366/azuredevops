@@ -1,42 +1,42 @@
-import base64
 import requests
+from requests.auth import HTTPBasicAuth
 
-# === CONFIG ===
-organization = "Cloud"  # just the org name, not full URL
-user_email = "test@abc.com"
-pat = ""
+# === Configuration ===
+
+source_org = "CloudSteer"
+dest_org = "rajeshtest01"
+user_email = "dinesh.angadi@isteer.com"
+pat = "90hKckYoHzqaqjrXkMoKzV7yJ5Kz4fbsAyOai5Innlw2y1rg3mSVJQQJ99BGACAAAAAGyXmFAAAGAZDOAbNJ"  # PAT must have access to both orgs
+
 
 # === Setup ===
-org_url = f"https://dev.azure.com/{organization}"
-headers = {
-    "Authorization": f"Basic {base64.b64encode(f':{pat}'.encode()).decode()}",
-    "Content-Type": "application/json"
-}
+auth = HTTPBasicAuth("", pat)
+headers = {"Content-Type": "application/json"}
 
-# === Step 1: Get user descriptor ===
-user_api = f"{org_url}/_apis/graph/users?filterValue={user_email}&api-version=7.1-preview.1"
-user_response = requests.get(user_api, headers=headers)
-user_response.raise_for_status()
+# === Step 1: Get user identity descriptor in source org ===
+identity_url = f"https://vssps.dev.azure.com/{source_org}/_apis/identities?searchFilter=General&filterValue={user_email}&queryMembership=Direct&api-version=7.1"
+identity_response = requests.get(identity_url, headers=headers, auth=auth)
 
-user_descriptor = user_response.json()['value'][0]['descriptor']
-print(f"[INFO] Found descriptor: {user_descriptor}")
+if identity_response.status_code != 200:
+    print(f"❌ Failed to fetch identity for {user_email}")
+    exit()
 
-# === Step 2: Get group memberships (upward) ===
-groups_api = f"{org_url}/_apis/graph/memberships/{user_descriptor}?direction=up&api-version=7.1-preview.1"
-groups_response = requests.get(groups_api, headers=headers)
-groups_response.raise_for_status()
+identity_data = identity_response.json()
+if not identity_data["value"]:
+    print("❌ No identity found for this user.")
+    exit()
 
-group_descriptors = [group['containerDescriptor'] for group in groups_response.json()['value']]
-print(f"[INFO] Found {len(group_descriptors)} groups")
+descriptor = identity_data["value"][0]["descriptor"]
+member_of = identity_data["value"][0].get("memberOf", [])
 
-# === Step 3: Get group display names ===
-group_names = []
-for desc in group_descriptors:
-    group_api = f"{org_url}/_apis/graph/descriptors/{desc}?api-version=7.1-preview.1"
-    group_detail = requests.get(group_api, headers=headers).json()
-    group_names.append(group_detail['value']['displayName'])
+print(f"User is member of {len(member_of)} groups in source org.\n")
 
-# === Output ===
-print("\n✅ Groups for", user_email)
-for group in group_names:
-    print("-", group)
+# === Step 2: Get group display names ===
+for group_descriptor in member_of:
+    group_url = f"https://vssps.dev.azure.com/{source_org}/_apis/identities/{group_descriptor}?api-version=7.1"
+    group_resp = requests.get(group_url, headers=headers, auth=auth)
+    if group_resp.status_code == 200:
+        group_name = group_resp.json().get("providerDisplayName", "Unknown")
+        print(f"✔️ {group_name}")
+    else:
+        print(f"⚠️ Failed to fetch group for {group_descriptor}")
