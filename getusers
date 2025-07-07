@@ -1,0 +1,42 @@
+import base64
+import requests
+
+# === CONFIG ===
+organization = "Cloud"  # just the org name, not full URL
+user_email = "test@abc.com"
+pat = ""
+
+# === Setup ===
+org_url = f"https://dev.azure.com/{organization}"
+headers = {
+    "Authorization": f"Basic {base64.b64encode(f':{pat}'.encode()).decode()}",
+    "Content-Type": "application/json"
+}
+
+# === Step 1: Get user descriptor ===
+user_api = f"{org_url}/_apis/graph/users?filterValue={user_email}&api-version=7.1-preview.1"
+user_response = requests.get(user_api, headers=headers)
+user_response.raise_for_status()
+
+user_descriptor = user_response.json()['value'][0]['descriptor']
+print(f"[INFO] Found descriptor: {user_descriptor}")
+
+# === Step 2: Get group memberships (upward) ===
+groups_api = f"{org_url}/_apis/graph/memberships/{user_descriptor}?direction=up&api-version=7.1-preview.1"
+groups_response = requests.get(groups_api, headers=headers)
+groups_response.raise_for_status()
+
+group_descriptors = [group['containerDescriptor'] for group in groups_response.json()['value']]
+print(f"[INFO] Found {len(group_descriptors)} groups")
+
+# === Step 3: Get group display names ===
+group_names = []
+for desc in group_descriptors:
+    group_api = f"{org_url}/_apis/graph/descriptors/{desc}?api-version=7.1-preview.1"
+    group_detail = requests.get(group_api, headers=headers).json()
+    group_names.append(group_detail['value']['displayName'])
+
+# === Output ===
+print("\n✅ Groups for", user_email)
+for group in group_names:
+    print("-", group)
