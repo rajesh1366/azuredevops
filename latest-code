@@ -1,4 +1,5 @@
 import requests
+import re
 from requests.auth import HTTPBasicAuth
 
 # === Cloud ADO Configuration ===
@@ -17,9 +18,13 @@ onprem_auth = HTTPBasicAuth("", onprem_pat)
 cloud_auth = HTTPBasicAuth("", cloud_pat)
 headers = {"Content-Type": "application/json"}
 
-# === Normalization function ===
+# === Function to normalize group names for comparison ===
 def normalize_group_name(name):
-    return name.lower().replace("\\\\", "\\").replace("//", "/").strip()
+    if not name:
+        return ""
+    # Replace double backslashes with single
+    name = re.sub(r"\\\\", r"\\", name)
+    return name.lower().strip()
 
 # === Step 1: Get cloud user descriptor ===
 cloud_identity_url = f"https://vssps.dev.azure.com/{cloud_org}/_apis/identities?searchFilter=General&filterValue={cloud_user_email}&queryMembership=Direct&api-version=7.1"
@@ -68,9 +73,9 @@ matched = []
 print("\n🔗 Matching cloud groups to on-prem groups...\n")
 for cloud_group in cloud_group_names:
     cloud_normalized = normalize_group_name(cloud_group)
-    
+
     match = next(
-        (g for g in onprem_groups if normalize_group_name(g.get("FriendlyDisplayName", "")) == cloud_normalized),
+        (g for g in onprem_groups if normalize_group_name(g.get("DisplayName", "")) == cloud_normalized),
         None
     )
 
