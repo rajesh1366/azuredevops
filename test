@@ -10,3 +10,15 @@ try:
     print("✅ Success:", r.status_code)
 except Exception as e:
     print("❌ Failed:", e)
+
+---
+import httpx
+
+proxies = {
+    "http://": "http://10.24.89.13:443",
+    "https://": "http://10.24.89.13:443"
+}
+
+with httpx.Client(proxies=proxies, verify=False) as client:
+    resp = client.get("https://ado.global.test.com")
+    print(resp.status_code)
