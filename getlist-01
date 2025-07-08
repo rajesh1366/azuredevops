@@ -1,15 +1,15 @@
 import requests
 from requests.auth import HTTPBasicAuth
-import os
 import urllib3
+import os
 
-# === Disable SSL Warnings (for verify=False) ===
+# === Disable SSL Warnings ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # === Configuration ===
 
 # --- Cloud Azure DevOps ---
-cloud_org = "your-cloud-org"  # Example: CloudSteer
+cloud_org = "CloudSteer"
 cloud_user_email = "user@domain.com"
 cloud_pat = "your-cloud-pat"
 
@@ -23,61 +23,66 @@ onprem_pat = "your-onprem-pat"
 cloud_auth = HTTPBasicAuth("", cloud_pat)
 onprem_auth = HTTPBasicAuth("", onprem_pat)
 
-# --- Proxy for on-prem only ---
+# --- Proxy only for on-prem ---
 onprem_proxies = {
-    "http": "http://proxy-host:port",
-    "https": "http://proxy-host:port"
+    "http": "http://proxy.company.com:8080",
+    "https": "http://proxy.company.com:8080"
 }
 
-# Optional: bypass proxy for internal on-prem server
+# Optional: Bypass proxy for internal DNS
 os.environ["NO_PROXY"] = "ado.global.test.com"
 
-# --- Headers ---
+# --- Common Headers ---
 headers = {"Content-Type": "application/json"}
 
-# === Step 1: Get cloud user descriptor ===
+# === Step 1: Get Cloud User Descriptor ===
 print(f"🔍 Fetching user descriptor for: {cloud_user_email}")
 identity_url = f"https://vssps.dev.azure.com/{cloud_org}/_apis/identities?searchFilter=General&filterValue={cloud_user_email}&queryMembership=Direct&api-version=7.1"
 
 try:
     resp = requests.get(identity_url, headers=headers, auth=cloud_auth, verify=False)
 except requests.exceptions.RequestException as e:
-    print("❌ Error while accessing Azure DevOps Cloud.")
+    print("❌ Error connecting to Azure DevOps Cloud.")
     print(e)
     exit()
 
 if resp.status_code != 200:
-    print(f"❌ Failed to fetch cloud user identity: {resp.status_code}")
+    print(f"❌ Failed to fetch user identity: {resp.status_code}")
     exit()
 
-identity_info = resp.json()
-if identity_info["count"] == 0:
-    print("❌ User not found in cloud.")
+identity_data = resp.json()
+if identity_data["count"] == 0:
+    print("❌ No user found.")
     exit()
 
-user_descriptor = identity_info["value"][0]["descriptor"]
-member_of = identity_info["value"][0].get("memberOf", [])
+user_descriptor = identity_data["value"][0]["descriptor"]
+member_of = identity_data["value"][0].get("memberOf", [])
 
-print(f"\n👤 Cloud user is part of {len(member_of)} groups.")
+print(f"\n👤 User is member of {len(member_of)} cloud groups.")
 cloud_group_names = []
 
+# === Step 2: Get Cloud Group Names ===
 for group_descriptor in member_of:
     group_url = f"https://vssps.dev.azure.com/{cloud_org}/_apis/identities/{group_descriptor}?api-version=7.1"
-    group_resp = requests.get(group_url, headers=headers, auth=cloud_auth, verify=False)
+    try:
+        group_resp = requests.get(group_url, headers=headers, auth=cloud_auth, verify=False)
+    except Exception as e:
+        print(f"⚠️ Failed to get group for {group_descriptor}: {e}")
+        continue
+
     if group_resp.status_code == 200:
         group_name = group_resp.json().get("providerDisplayName", "Unknown")
         cloud_group_names.append(group_name)
         print(f"✔️ {group_name}")
     else:
-        print(f"⚠️ Could not fetch group name for descriptor: {group_descriptor}")
+        print(f"⚠️ Error fetching group name: {group_resp.status_code}")
 
-# === Step 2: Get on-prem groups ===
-print("\n📡 Fetching on-prem group identities...")
-
+# === Step 3: Get On-Prem Groups ===
+print("\n📡 Fetching on-prem groups...")
 try:
     onprem_resp = requests.get(onprem_api, headers=headers, auth=onprem_auth, verify=False, proxies=onprem_proxies)
 except requests.exceptions.RequestException as e:
-    print("❌ Error while accessing Azure DevOps Server.")
+    print("❌ Error connecting to Azure DevOps Server.")
     print(e)
     exit()
 
@@ -86,9 +91,9 @@ if onprem_resp.status_code != 200:
     exit()
 
 onprem_groups = onprem_resp.json().get("Identities", [])
-print(f"✅ Retrieved {len(onprem_groups)} groups from on-prem.")
+print(f"✅ Retrieved {len(onprem_groups)} on-prem groups.")
 
-# === Step 3: Match cloud groups to on-prem ===
+# === Step 4: Match Cloud Groups with On-Prem ===
 print("\n🔗 Matching cloud groups to on-prem...\n")
 matched = []
 
@@ -102,9 +107,9 @@ for cloud_group in cloud_group_names:
             "onprem_id": match["TeamFoundationId"]
         })
     else:
-        print(f"❌ No match found for: {cloud_group}")
+        print(f"❌ No match for: {cloud_group}")
 
-# === Summary ===
-print("\n📋 Final Mapped Group Results:")
+# === Step 5: Final Summary ===
+print("\n📋 Final Mapped Groups:")
 for m in matched:
-    print(f"- {m['name']} => {m['onprem_descriptor']}")
+    print(f"- {m['name']} → {m['onprem_descriptor']}")
