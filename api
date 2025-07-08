@@ -2,6 +2,8 @@ GET http://your-server:8080/tfs/_apis/identities?searchFilter=General&filterValu
 
 POST http://your-server:8080/tfs/DefaultCollection/_apis/accesscontrolentries/{securityNamespaceId}?api-version=7.1-preview.1
 
+http://<your-server>:8080/tfs/{collection}/_apis/identities?searchFilter=General&filterValue=user@domain.com&queryMembership=None&api-version=7.1
+
 
 {
   "token": "vstfs://Classification/TeamProject/{projectId}",
