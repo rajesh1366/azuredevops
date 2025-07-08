@@ -1,0 +1,12 @@
+import requests
+
+proxies = {
+    "http": "http://10.24.89.13:443",
+    "https": "http://10.24.89.13:443"
+}
+
+try:
+    r = requests.get("https://ado.global.test.com", proxies=proxies, verify=False)
+    print("✅ Success:", r.status_code)
+except Exception as e:
+    print("❌ Failed:", e)
