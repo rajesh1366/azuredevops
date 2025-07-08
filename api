@@ -1,0 +1,16 @@
+GET http://your-server:8080/tfs/_apis/identities?searchFilter=General&filterValue=user@domain.com&queryMembership=None&api-version=7.1
+
+POST http://your-server:8080/tfs/DefaultCollection/_apis/accesscontrolentries/{securityNamespaceId}?api-version=7.1-preview.1
+
+
+{
+  "token": "vstfs://Classification/TeamProject/{projectId}",
+  "merge": true,
+  "accessControlEntries": [
+    {
+      "descriptor": "Microsoft.TeamFoundation.Identity;your-onprem-user-descriptor",
+      "allow": 4,
+      "deny": 0
+    }
+  ]
+}
