@@ -1,0 +1,100 @@
+import requests
+import json
+import time
+
+# ==== CONFIGURATION ====
+source_org = "SourceOrgName"
+dest_org = "DestinationOrgName"
+user_email = "rajesh.rakoti@isteer.com"
+pat = "your_pat_here"  # PAT must have access to both orgs
+
+# ==== AUTH & HEADERS ====
+auth = requests.auth.HTTPBasicAuth('', pat)
+headers = {"Content-Type": "application/json"}
+
+# ==== STEP 1: Get group descriptors from source org ====
+def get_group_descriptors(org, user_email):
+    url = f"https://vssps.dev.azure.com/{org}/_apis/identities"
+    params = {
+        "searchFilter": "General",
+        "filterValue": user_email,
+        "queryMembership": "Direct",
+        "api-version": "7.1"
+    }
+    r = requests.get(url, headers=headers, params=params, auth=auth)
+    data = r.json()
+    return data['value'][0]['memberOf'] if 'value' in data and data['value'] else []
+
+# ==== STEP 2: Resolve group descriptor to group name ====
+def resolve_group_name(org, descriptor):
+    url = f"https://vssps.dev.azure.com/{org}/_apis/identities"
+    params = {
+        "descriptors": descriptor,
+        "api-version": "7.1"
+    }
+    r = requests.get(url, headers=headers, params=params, auth=auth)
+    data = r.json()
+    if 'value' in data and data['value']:
+        return data['value'][0].get('providerDisplayName')
+    return None
+
+# ==== STEP 3: Get descriptor of group name in destination org ====
+def get_group_descriptor_by_name(org, group_name):
+    url = f"https://vssps.dev.azure.com/{org}/_apis/graph/groups"
+    params = {
+        "api-version": "7.1-preview.1"
+    }
+    r = requests.get(url, headers=headers, params=params, auth=auth)
+    groups = r.json().get("value", [])
+    for g in groups:
+        if g.get("principalName", "").lower() == group_name.lower() or g.get("displayName", "").lower() == group_name.lower():
+            return g.get("descriptor")
+    return None
+
+# ==== STEP 4: Get descriptor of the user in destination org ====
+def get_user_descriptor(org, email):
+    url = f"https://vssps.dev.azure.com/{org}/_apis/graph/users"
+    params = {
+        "filterValue": email,
+        "api-version": "7.1-preview.1"
+    }
+    r = requests.get(url, headers=headers, params=params, auth=auth)
+    data = r.json()
+    if 'value' in data and data['value']:
+        return data['value'][0]['descriptor']
+    return None
+
+# ==== STEP 5: Add user to group in destination org ====
+def add_user_to_group(org, group_descriptor, user_descriptor):
+    url = f"https://vssps.dev.azure.com/{org}/_apis/graph/memberships/{user_descriptor}/{group_descriptor}?api-version=7.1-preview.1"
+    r = requests.put(url, headers=headers, auth=auth)
+    if r.status_code == 200 or r.status_code == 204:
+        return True
+    else:
+        print(f"Failed to add user to {group_descriptor}: {r.status_code} - {r.text}")
+        return False
+
+# ==== MAIN EXECUTION ====
+source_descriptors = get_group_descriptors(source_org, user_email)
+print(f"User is member of {len(source_descriptors)} groups in source org.")
+
+user_dest_descriptor = get_user_descriptor(dest_org, user_email)
+if not user_dest_descriptor:
+    print("❌ User not found in destination org.")
+    exit(1)
+
+for descriptor in source_descriptors:
+    group_name = resolve_group_name(source_org, descriptor)
+    if group_name:
+        print(f"➡️ Resolving group '{group_name}' in destination org...")
+        dest_group_descriptor = get_group_descriptor_by_name(dest_org, group_name)
+        if dest_group_descriptor:
+            print(f"✅ Found group '{group_name}' in destination. Adding user...")
+            success = add_user_to_group(dest_org, dest_group_descriptor, user_dest_descriptor)
+            if success:
+                print(f"✔️ User added to '{group_name}'")
+        else:
+            print(f"❌ Group '{group_name}' not found in destination org.")
+    else:
+        print(f"❌ Could not resolve group name for descriptor: {descriptor}")
+    time.sleep(0.5)  # optional delay
