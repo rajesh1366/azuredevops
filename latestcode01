@@ -18,12 +18,11 @@ onprem_auth = HTTPBasicAuth("", onprem_pat)
 cloud_auth = HTTPBasicAuth("", cloud_pat)
 headers = {"Content-Type": "application/json"}
 
-# === Normalize group names to handle slashes, cases, whitespace ===
+# === Normalize group names for matching ===
 def normalize_group_name(name):
     if not name:
         return ""
-    # Convert double slashes to single
-    name = name.replace("\\\\", "\\").replace("\\", "\\")
+    name = name.replace("\\\\", "\\")  # normalize double backslash to single
     return name.strip().lower()
 
 # === Step 1: Get cloud user descriptor ===
@@ -52,7 +51,7 @@ for group_descriptor in member_of:
     if group_resp.status_code == 200:
         group_name = group_resp.json().get("providerDisplayName", "Unknown")
         cloud_group_names.append(group_name)
-        print(f"✔️ {group_name}")
+        print(f"✔️ {group_name.encode('unicode_escape').decode()}")
     else:
         print(f"⚠️ Could not fetch group name for descriptor: {group_descriptor}")
 
@@ -79,13 +78,16 @@ for cloud_group in cloud_group_names:
         onprem_name = g.get("DisplayName", "")
         onprem_normalized = normalize_group_name(onprem_name)
 
-        # Debug output for comparison
+        # Debug: show encoded form for clarity
+        cloud_display = cloud_group.encode('unicode_escape').decode()
+        onprem_display = onprem_name.encode('unicode_escape').decode()
+
         if cloud_normalized == onprem_normalized:
-            print(f"✅ Match: '{cloud_group}' == '{onprem_name}'")
+            print(f"✅ Match: '{cloud_display}' == '{onprem_display}'")
             match = g
             break
         else:
-            print(f"❌ Mismatch:\n   Cloud:  {cloud_group} → {cloud_normalized}\n   OnPrem: {onprem_name} → {onprem_normalized}")
+            print(f"❌ Mismatch:\n   Cloud : {cloud_display} → {cloud_normalized}\n   OnPrem: {onprem_display} → {onprem_normalized}")
 
     if match:
         matched.append({
@@ -94,9 +96,9 @@ for cloud_group in cloud_group_names:
             "onprem_id": match["TeamFoundationId"]
         })
     else:
-        print(f"❌ No match found for cloud group: {cloud_group}")
+        print(f"❌ No match found for cloud group: {cloud_display}")
 
 # === Final Output ===
 print("\n📝 Final Mapped Groups:")
 for m in matched:
-    print(f"- {m['name']} => {m['onprem_descriptor']}")
+    print(f"- {m['name'].encode('unicode_escape').decode()} => {m['onprem_descriptor']}")
