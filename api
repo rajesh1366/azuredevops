@@ -4,6 +4,8 @@ POST http://your-server:8080/tfs/DefaultCollection/_apis/accesscontrolentries/{s
 
 http://<your-server>:8080/tfs/{collection}/_apis/identities?searchFilter=General&filterValue=user@domain.com&queryMembership=None&api-version=7.1
 
+https://vssps.dev.azure.com/CloudSteer/_apis/identities?searchFilter=General&filterValue=rajesh.com&queryMembership=Direct&api-version=7.1
+
 
 {
   "token": "vstfs://Classification/TeamProject/{projectId}",
