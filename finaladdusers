@@ -1,0 +1,139 @@
+import requests
+import re
+import json
+from requests.auth import HTTPBasicAuth
+
+# === Cloud ADO Configuration ===
+cloud_org = "your-cloud-org"
+cloud_user_email = "user@domain.com"
+cloud_pat = "your-cloud-pat"
+
+# === On-Prem ADO Configuration ===
+onprem_base_url = "https://ado.global.test.com"
+onprem_project_path = "sc-ado-ga-op/a2676d24-f5cf-423f-9277-e18efla2c8la"
+onprem_api = f"{onprem_base_url}/{onprem_project_path}/_api_identity_/readsvopeApplicationGroupJson?__v=5"
+onprem_add_user_api = "https://ado.global.test.com/sc-ado-qa-op/a2676d24-f5cf-423f-9277-61515/api/identity/Addiddenties?_v=5"
+onprem_user_id = "be7888ab64c3"  # Static on-prem user ID to add to groups
+onprem_pat = "your-onprem-pat"
+onprem_auth = HTTPBasicAuth("", onprem_pat)
+
+# === Proxy Configuration (if needed) ===
+proxies = {
+    "http": "http://10.24.89.13:443",
+    "https": "http://10.24.89.13:443"
+}
+
+# === Auth Headers ===
+cloud_auth = HTTPBasicAuth("", cloud_pat)
+headers = {"Content-Type": "application/json"}
+
+# === Normalize group names for matching ===
+def normalize_group_name(name):
+    if not name:
+        return ""
+    name = name.replace("\\\\", "\\")
+    return name.strip().lower()
+
+# === Step 1: Get cloud user descriptor ===
+cloud_identity_url = f"https://vssps.dev.azure.com/{cloud_org}/_apis/identities?searchFilter=General&filterValue={cloud_user_email}&queryMembership=Direct&api-version=7.1"
+resp = requests.get(cloud_identity_url, headers=headers, auth=cloud_auth, verify=False)
+
+if resp.status_code != 200:
+    print(f"❌ Failed to fetch cloud user identity: {resp.status_code}")
+    exit()
+
+identity_info = resp.json()
+if identity_info["count"] == 0:
+    print("❌ User not found in cloud.")
+    exit()
+
+user_descriptor = identity_info["value"][0]["descriptor"]
+member_of = identity_info["value"][0].get("memberOf", [])
+
+print(f"\n🔍 Cloud user '{cloud_user_email}' is part of {len(member_of)} groups.")
+
+# === Step 2: Get group names from cloud ===
+cloud_group_names = []
+for group_descriptor in member_of:
+    group_url = f"https://vssps.dev.azure.com/{cloud_org}/_apis/identities/{group_descriptor}?api-version=7.1"
+    group_resp = requests.get(group_url, headers=headers, auth=cloud_auth, verify=False)
+    if group_resp.status_code == 200:
+        group_name = group_resp.json().get("providerDisplayName", "Unknown")
+        cloud_group_names.append(group_name)
+        print(f"✔️ {group_name.encode('unicode_escape').decode()}")
+    else:
+        print(f"⚠️ Could not fetch group name for descriptor: {group_descriptor}")
+
+# === Step 3: Get all on-prem groups ===
+print("\n📡 Fetching on-prem groups...")
+onprem_resp = requests.get(onprem_api, headers=headers, auth=onprem_auth, verify=False, proxies=proxies)
+
+if onprem_resp.status_code != 200:
+    print(f"❌ Failed to fetch on-prem groups: {onprem_resp.status_code}")
+    exit()
+
+onprem_groups = onprem_resp.json().get("identities", [])
+print(f"✅ Found {len(onprem_groups)} on-prem groups.")
+
+# === Step 4: Match cloud groups to on-prem groups ===
+matched = []
+
+print("\n🔗 Matching cloud groups to on-prem groups...\n")
+for cloud_group in cloud_group_names:
+    cloud_normalized = normalize_group_name(cloud_group)
+    cloud_display = cloud_group.encode('unicode_escape').decode()
+
+    match = None
+    for g in onprem_groups:
+        onprem_name = g.get("DisplayName", "")
+        onprem_normalized = normalize_group_name(onprem_name)
+        onprem_display = onprem_name.encode('unicode_escape').decode()
+
+        if cloud_normalized == onprem_normalized:
+            print(f"✅ Match: {cloud_display} == {onprem_display}")
+            match = g
+            break
+
+    if match:
+        matched.append({
+            "cloud_name": cloud_group,
+            "onprem_display": match["DisplayName"],
+            "onprem_id": match.get("TeamFoundationId", "")
+        })
+    else:
+        print(f"❌ No match for cloud group: {cloud_display}")
+
+# === Final Output ===
+print("\n📝 Final Mapped Groups:")
+group_ids_to_join = []
+for m in matched:
+    print(f"- Cloud  : {m['cloud_name'].encode('unicode_escape').decode()}")
+    print(f"  OnPrem : {m['onprem_display'].encode('unicode_escape').decode()}")
+    print(f"  ID     : {m['onprem_id']}")
+    group_ids_to_join.append(m["onprem_id"])
+
+# === Step 5: Add user to matched on-prem groups ===
+if group_ids_to_join:
+    payload = {
+        "newUsersJson": "[]",
+        "existingUsersJson": json.dumps([onprem_user_id]),
+        "groupsToJoinJson": json.dumps(group_ids_to_join)
+    }
+
+    print("\n🚀 Adding user to matched groups on on-prem ADO...")
+    add_resp = requests.post(
+        onprem_add_user_api,
+        headers=headers,
+        auth=onprem_auth,
+        verify=False,
+        proxies=proxies,
+        data=json.dumps(payload)
+    )
+
+    if add_resp.status_code == 200:
+        print("✅ User added to matched groups successfully.")
+    else:
+        print(f"❌ Failed to add user to groups. Status: {add_resp.status_code}")
+        print(f"Response: {add_resp.text}")
+else:
+    print("⚠️ No matched groups found, skipping user addition.")
