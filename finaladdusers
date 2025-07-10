@@ -137,3 +137,37 @@ if group_ids_to_join:
         print(f"Response: {add_resp.text}")
 else:
     print("⚠️ No matched groups found, skipping user addition.")
+
+-----------
+
+# Step 5: Add user to matched on-prem groups
+if group_ids_to_join:
+    existing_users = json.dumps([onprem_user_id])        # gives string: "[\"be7888ab64c3\"]"
+    groups_to_join = json.dumps(group_ids_to_join)       # gives string: "[\"id1\", \"id2\"]"
+
+    payload = {
+        "newUsersJson": "[]",
+        "existingUsersJson": existing_users,
+        "groupsToJoinJson": groups_to_join
+    }
+
+    print("\n🚀 Sending payload to add user:")
+    print(json.dumps(payload, indent=2))
+
+    add_resp = requests.post(
+        onprem_add_user_api,
+        headers=headers,
+        auth=onprem_auth,
+        verify=False,
+        proxies=proxies,
+        data=json.dumps(payload)  # encode full object to JSON
+    )
+
+    if add_resp.status_code == 200:
+        print("✅ User added to matched groups successfully.")
+    else:
+        print(f"❌ Failed to add user to groups. Status: {add_resp.status_code}")
+        print(f"Response: {add_resp.text}")
+else:
+    print("⚠️ No matched groups found, skipping user addition.")
+
